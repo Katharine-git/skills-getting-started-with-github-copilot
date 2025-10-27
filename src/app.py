@@ -8,8 +8,12 @@ for extracurricular activities at Mergington High School.
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
+
 import os
 from pathlib import Path
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
 app = FastAPI(title="Mergington High School API",
               description="API for viewing and signing up for extracurricular activities")
@@ -130,4 +134,60 @@ def signup_for_activity(activity_name: str, email: str):
 
     # Add student
     activity["participants"].append(email)
-    return {"message": f"Signed up {email} for {activity_name}"}
+
+    # Send congratulatory email
+    send_congrats_email(email, activity_name)
+
+    welcome_message = f"Welcome, {email}! You have successfully registered for {activity_name}. Congratulations!"
+    return {"message": welcome_message}
+
+
+# Helper function to send email
+def send_congrats_email(recipient_email, activity_name):
+    # SMTP configuration (update these for your mail server)
+    SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.gmail.com")
+    SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+    SMTP_USERNAME = os.getenv("SMTP_USERNAME", "your-email@gmail.com")
+    SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "your-app-password")
+    SENDER_EMAIL = SMTP_USERNAME
+
+    subject = f"Congratulations on joining {activity_name}!"
+    body = f"""
+Hi,
+
+Congratulations! You have been successfully registered for {activity_name} at Mergington High School.
+
+We look forward to seeing you participate and have a great experience!
+
+Best regards,
+Mergington High School Activities Team
+"""
+
+    msg = MIMEMultipart()
+    msg["From"] = SENDER_EMAIL
+    msg["To"] = recipient_email
+    msg["Subject"] = subject
+    msg.attach(MIMEText(body, "plain"))
+
+    try:
+        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
+            server.starttls()
+            server.login(SMTP_USERNAME, SMTP_PASSWORD)
+            server.sendmail(SENDER_EMAIL, recipient_email, msg.as_string())
+    except Exception as e:
+        print(f"Failed to send email to {recipient_email}: {e}")
+
+
+# Endpoint to unregister a participant
+@app.post("/activities/{activity_name}/unregister")
+def unregister_from_activity(activity_name: str, email: str):
+    """Unregister a student from an activity"""
+    if activity_name not in activities:
+        raise HTTPException(status_code=404, detail="Activity not found")
+
+    activity = activities[activity_name]
+    if email not in activity["participants"]:
+        raise HTTPException(status_code=400, detail="Student not registered for this activity")
+
+    activity["participants"].remove(email)
+    return {"message": f"Unregistered {email} from {activity_name}"}
